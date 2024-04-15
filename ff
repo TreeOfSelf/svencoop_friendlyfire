@@ -1,0 +1,254 @@
+array<int> c(20, 0);
+
+int waitTimer = 0;
+int rTime = 0;
+CCVar@ cvar_survive;
+
+
+CScheduledFunction@ g_pThinkFunc = null;
+CScheduledFunction@ g_pThinkFuncTwo = null;
+ 
+void PluginInit() {
+	g_Module.ScriptInfo.SetAuthor("Sebastian");
+	g_Module.ScriptInfo.SetContactInfo("Smoke Weed");
+	g_Hooks.RegisterHook( Hooks::Game::MapChange, @MapChange );
+	g_Hooks.RegisterHook(Hooks::Player::PlayerTakeDamage, @PlayerTakeDamage);
+	g_Hooks.RegisterHook(Hooks::Player::PlayerKilled, @PlayerKilled);
+	g_Hooks.RegisterHook(Hooks::Player::ClientSay, @ClientSay);
+	g_Hooks.RegisterHook(Hooks::Player::PlayerSpawn, @PlayerSpawn);
+	//g_Hooks.RegisterHook(Hooks::Player::PlayerCanRespawn, @PlayerCanRespawn);
+	//g_Hooks.RegisterHook(Hooks::Game::EntityCreated, @EntityCreated);
+	//g_Hooks.RegisterHook(Hooks::Player::PlayerSpawn, @PlayerSpawn);
+	//g_Hooks.RegisterHook(Hooks::Player::ClientConnected, @ClientConnected);
+	//g_Hooks.RegisterHook(Hooks::Weapon::WeaponPrimaryAttack, @WeaponPrimaryAttack);
+	
+	@cvar_survive = CCVar("survive", 1, "Janky survival", ConCommandFlag::AdminOnly);
+	
+	if (g_pThinkFunc !is null)  g_Scheduler.RemoveTimer(g_pThinkFunc);
+ 	if (g_pThinkFuncTwo !is null)  g_Scheduler.RemoveTimer(g_pThinkFuncTwo); 
+	@g_pThinkFunc = g_Scheduler.SetInterval("mapChanger", 30);
+	@g_pThinkFunc = g_Scheduler.SetInterval("displaySurvival", 1);
+	@g_pThinkFuncTwo = g_Scheduler.SetInterval("Killer", 1);
+
+
+	  for (int i = 1; i <= g_Engine.maxClients; i++) {
+		CBasePlayer@ plr = g_PlayerFuncs.FindPlayerByIndex(i);
+		if (plr !is null ){
+			Observer@ obs = plr.GetObserver();
+			obs.StopObserver(true);
+		} 
+	  }
+	
+	
+}
+
+HookReturnCode MapChange()
+{
+	waitTimer=0;
+	rTime = 0;
+	return HOOK_CONTINUE;
+}
+
+
+HookReturnCode WeaponPrimaryAttack(CBasePlayer@ pPlayer, CBasePlayerWeapon@ wep) {
+  if (wep is null)
+    return HOOK_CONTINUE;
+
+  if (wep.GetClassname() == "weapon_medkit") {
+		
+	
+		
+	  int ammo = pPlayer.m_rgAmmo(12);
+	  //g_PlayerFuncs.ClientPrintAll(HUD_PRINTTALK,"ammo");
+	  //g_PlayerFuncs.ClientPrintAll(HUD_PRINTTALK,ammo);
+	  if(ammo>=5){
+
+		  for (int i = 1; i <= g_Engine.maxClients; i++) {
+			CBasePlayer@ plr = g_PlayerFuncs.FindPlayerByIndex(i);
+			if (plr !is null && (plr.entindex() != pPlayer.entindex()) ){
+				Vector dist = pPlayer.EyePosition().opSub(plr.EyePosition());
+				//g_PlayerFuncs.ClientPrintAll(HUD_PRINTTALK,dist.ToString());
+				float fDist = abs(dist.opIndex(0)) + abs(dist.opIndex(1)) + abs(dist.opIndex(2));
+				//g_PlayerFuncs.ClientPrintAll(HUD_PRINTTALK, fDist);
+				//g_PlayerFuncs.ClientPrintAll(HUD_PRINTTALK,ammo);
+				if(fDist<75.0){
+					plr.TakeHealth(3,0,100);
+					ammo-=5;
+					pPlayer.m_rgAmmo(12,ammo);
+				}
+			} 
+		  }
+	  }
+	
+    return HOOK_HANDLED;
+  }
+
+  return HOOK_CONTINUE;
+}
+
+
+void Killer(){
+	g_EngineFuncs.ServerCommand( "mp_npckill 1\n");
+	g_EngineFuncs.ServerExecute();
+}
+
+
+void displaySurvival(){
+	  if(g_SurvivalMode.IsEnabled()==false &&  cvar_survive.GetInt() == 1){
+	  if(rTime<60){
+	  int ourTime = 60 - rTime;
+	  for (int i = 1; i <= g_Engine.maxClients; i++) {
+		CBasePlayer@ plr = g_PlayerFuncs.FindPlayerByIndex(i);
+		if (plr !is null){
+
+			g_EngineFuncs.ClientPrintf(plr, print_center, "Survival mode starting in "+string(ourTime)+" seconds");
+
+		} 
+	  }
+	}
+	if(rTime==60){
+		g_PlayerFuncs.ClientPrintAll(HUD_PRINTTALK, "Survival mode now active. No more respawning allowed.");
+	}
+	}
+	rTime+=1;
+
+
+}
+
+
+void mapChanger(){
+
+
+
+
+	if(g_SurvivalMode.IsEnabled()==false &&  cvar_survive.GetInt() == 1){
+		waitTimer += 1;
+		//if(waitTimer==1){
+		//	g_PlayerFuncs.ClientPrintAll(HUD_PRINTTALK, "30 SECONDS TIL  	RESPAWNING DISABLED");
+		//}
+		//if(waitTimer==2){
+		//	g_PlayerFuncs.ClientPrintAll(HUD_PRINTTALK, "RESPAWNING DISABLED");
+		//}
+		int reset = 1;
+		int playerHit = 0;
+		  for (int i = 1; i <= g_Engine.maxClients; i++) {
+			CBasePlayer@ plr = g_PlayerFuncs.FindPlayerByIndex(i);
+			if (plr !is null && plr.IsAlive()==true ){
+				reset=0;
+			} 
+			if (plr !is null){
+				playerHit=1;
+			}
+		  }
+		if(reset==1 && playerHit==1){
+			g_EngineFuncs.ChangeLevel(string(g_Engine.mapname));
+		}
+	}
+
+}
+
+
+
+
+
+
+
+
+HookReturnCode ClientConnected(CBasePlayer@ plr) {
+	int i = 0;
+	int hitter=1;
+	while(i < 19 && hitter==1){
+		if(c[i]==0){
+			c[i] = plr.entindex();
+			hitter=0;
+		}		
+
+		i+=1;
+	}
+	return HOOK_HANDLED;
+}
+
+HookReturnCode ClientDisconnect(CBasePlayer@ plr) {
+	int i = 0;
+	int hitter=1;
+	while(i < 19 && hitter==1){
+		if(c[i]==plr.entindex()){
+			c[i] = 0;
+			hitter=0;
+		}		
+
+		i+=1;
+	}
+	return HOOK_HANDLED;
+}
+
+HookReturnCode PlayerTakeDamage( DamageInfo@ pDamageInfo ) {
+	CBasePlayer@ plr = cast<CBasePlayer@>(g_EntityFuncs.Instance(pDamageInfo.pVictim.pev));
+	CBaseEntity@ attacker = pDamageInfo.pAttacker;
+
+		//g_PlayerFuncs.ClientPrintAll(HUD_PRINTTALK, "damage info");
+		//g_PlayerFuncs.ClientPrintAll(HUD_PRINTTALK, pDamageInfo.bitsDamageType );
+		//g_PlayerFuncs.ClientPrintAll(HUD_PRINTTALK, pDamageInfo.flDamage);
+	
+	if(attacker.IsPlayer() && attacker.m_iClassSelection == plr.m_iClassSelection){
+		//g_PlayerFuncs.ClientPrintAll(HUD_PRINTTALK, "damage info");
+		//g_PlayerFuncs.ClientPrintAll(HUD_PRINTTALK, pDamageInfo.bitsDamageType );
+		//g_PlayerFuncs.ClientPrintAll(HUD_PRINTTALK, pDamageInfo.flDamage);
+		plr.TakeHealth(-pDamageInfo.flDamage,0,100);
+	}
+	
+	return HOOK_CONTINUE;
+}
+
+HookReturnCode PlayerKilled( CBasePlayer@ pPlayer, CBaseEntity@ pAttacker, int iGib) {
+
+	/*if(waitTimer>=2 && g_SurvivalMode.IsEnabled()==false && cvar_survive.GetInt() == 1 ){
+		Observer@ obs = pPlayer.GetObserver();
+		obs.StartObserver(pPlayer.GetOrigin(), pPlayer.pev.angles, false);
+		obs.SetObserverModeControlEnabled( true );
+		pPlayer.RemoveAllItems( true );
+		pPlayer.m_flRespawnDelayTime = Math.FLOAT_MAX;
+
+
+		return HOOK_CONTINUE;
+	}else{
+		return HOOK_CONTINUE;
+	}*/
+	
+	return HOOK_CONTINUE;
+}
+
+HookReturnCode PlayerSpawn( CBasePlayer@ pPlayer) {
+
+	if(waitTimer>=2 && g_SurvivalMode.IsEnabled()==false && cvar_survive.GetInt() == 1){
+		//g_PlayerFuncs.ClientPrintAll(HUD_PRINTTALK, "CONNECTED");
+		//pPlayer.m_flRespawnDelayTime = 5000.0;
+		Observer@ obs = pPlayer.GetObserver();
+		obs.SetObserverModeControlEnabled( true );
+		obs.StartObserver(pPlayer.GetOrigin(), pPlayer.pev.angles, false);
+		obs.SetObserverModeControlEnabled( true );
+		//pPlayer.RemoveAllItems( true );
+		pPlayer.pev.nextthink = 10000000.0;
+
+
+		return HOOK_HANDLED;
+	}else{
+		return HOOK_CONTINUE;
+	}
+}
+
+
+
+
+HookReturnCode ClientSay(SayParameters@ pParams ) {
+	//g_PlayerFuncs.ClientPrintAll(HUD_PRINTTALK, cvar_survive.GetInt());
+
+	//g_EngineFuncs.ServerCommand( "changelevel " + "hl_c00" + "\n");
+	//g_EngineFuncs.ServerExecute();
+
+
+
+	return HOOK_CONTINUE;
+}
+
+
